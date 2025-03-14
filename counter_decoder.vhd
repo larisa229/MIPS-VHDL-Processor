@@ -17,7 +17,7 @@ end counter_decoder;
 architecture Behavioral of counter_decoder is
 
 signal en : STD_LOGIC_VECTOR(4 downto 0) := (others => '0');
-signal cnt : STD_LOGIC_VECTOR(31 downto 0) := (others => '0');
+signal cnt : STD_LOGIC_VECTOR(15 downto 0) := (others => '0');
 
 component MPG is
   Port (   clk : in STD_LOGIC;
@@ -37,16 +37,20 @@ end component;
 
 begin
     debounce: MPG port map (clk => clk, btn => btn, enable => en);
-    display : seven_seg_disp port map (clk => clk, digits => cnt, an => an, cat => cat);
-    
+    display : seven_seg_disp port map (clk => clk, digits => x"1234_5678", an => an, cat => cat);
+
     process(clk, en)
     begin
         if rising_edge(clk) then
-            if en(0) = '1' then
+            if en(2) = '1' then
+                cnt <= (others => '0');
+            elsif en(0) = '1' then
                 cnt <= cnt + 1;
             end if;
         end if;
        
     end process;
 
+    led <= cnt;
+    
 end Behavioral;
