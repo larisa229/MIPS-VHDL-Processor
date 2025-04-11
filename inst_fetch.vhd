@@ -12,8 +12,8 @@ entity inst_fetch is
     pc_en                 : in  std_logic;
     pc_reset              : in  std_logic;
     -- control signals
-    ctrl_jump             : in  std_logic;
-    ctrl_pc_src           : in  std_logic;
+    jump                  : in  std_logic;
+    pc_src                : in  std_logic;
     -- outputs
     instruction           : out std_logic_vector(15 downto 0);
     pc_plus_one           : out std_logic_vector(15 downto 0)
@@ -27,7 +27,6 @@ signal s_mux_jump_out, s_adder_out, s_mux_branch_out, s_rom_data : std_logic_vec
 
 type t_rom is array (0 to 255) of std_logic_vector(15 downto 0);
 signal s_rom : t_rom := (
-  --  opc rs  rt  rd sa func
     b"000_001_010_011_0_000", 
     b"000_110_100_010_0_001", 
     x"1234",                 
@@ -51,8 +50,8 @@ begin
     
     s_rom_data <= s_rom(conv_integer(s_pc_out(7 downto 0)));
     s_adder_out <= s_pc_out + 1;
-    s_mux_branch_out <= s_adder_out when ctrl_pc_src = '0' else  branch_target_address;
-    s_mux_jump_out <= s_mux_branch_out when ctrl_jump = '0' else jump_address;
+    s_mux_branch_out <= s_adder_out when pc_src = '0' else  branch_target_address;
+    s_mux_jump_out <= s_mux_branch_out when jump = '0' else jump_address;
     
     pc_plus_one <= s_adder_out;
     instruction <= s_rom_data;
