@@ -17,10 +17,12 @@ architecture Behavioral of test_env is
 
 signal s_mpg_out : std_logic_vector(4 downto 0) := (others => '0');
 signal s_digits : std_logic_vector(31 downto 0) := (others => '0');
-signal s_id_out_func : std_logic_vector(2 downto 0) := (others => '0');
+signal s_id_out_func, s_ctrl_alu_op : std_logic_vector(2 downto 0) := (others => '0');
 signal s_if_out_instruction, s_id_in_wd, s_id_out_ext_imm, s_id_out_rd1, s_id_out_rd2 : std_logic_vector(15 downto 0) := (others => '0');
 signal s_if_out_pc_plus_one, s_digits_upper, s_digits_lower : std_logic_vector(15 downto 0) := (others => '0');
-signal s_ctrl_ext_op, s_ctrl_reg_dst, s_id_in_reg_write, s_id_out_sa, s_ctrl_reg_wr : std_logic := '0';
+signal s_ctrl_ext_op, s_ctrl_reg_dst, s_id_in_reg_write, s_id_out_sa : std_logic := '0';
+signal s_ctrl_alu_src, s_ctrl_branch, s_ctrl_mem_write, s_ctrl_mem_to_reg, s_ctrl_reg_write : std_logic := '0';
+signal s_ctrl_pc_src, s_ctrl_jump, s_ctrl_reg_wr : std_logic := '0';
 
 component inst_fetch is
   port (
@@ -58,6 +60,23 @@ component instr_decode is
   );
 end component;
 
+component control_unit is
+  port (
+    -- inputs
+    op_code : in std_logic_vector(2 downto 0);
+    -- outputs
+    reg_dst    : out std_logic;
+    ext_op     : out std_logic;
+    alu_src    : out std_logic;
+    branch     : out std_logic;
+    jump       : out std_logic;
+    alu_op     : out std_logic_vector(2 downto 0);
+    mem_write  : out std_logic;
+    mem_to_reg : out std_logic;
+    reg_write  : out std_logic 
+  );
+end component;
+
 component MPG is
   Port (   clk : in STD_LOGIC;
            btn : in  std_logic_vector(4  downto 0);
@@ -83,8 +102,8 @@ begin
     clk                    => clk,
     branch_target_address  => x"0002",
     jump_address           => x"0000",
-    jump                   => sw(0),
-    pc_src                 => sw(1),
+    jump                   => s_ctrl_jump,
+    pc_src                 => s_ctrl_pc_src,
     pc_en                  => s_mpg_out(0),
     pc_reset               => s_mpg_out(1),
     instruction            => s_if_out_instruction,
@@ -104,6 +123,20 @@ begin
     rd1       => s_id_out_rd1,
     rd2       => s_id_out_rd2,
     sa        => s_id_out_sa
+  );
+  
+   inst_cu : control_unit
+   port map (
+    op_code    => s_if_out_instruction(15 downto 13),
+    reg_dst    => s_ctrl_reg_dst,
+    ext_op     => s_ctrl_ext_op,
+    alu_src    => s_ctrl_alu_src,
+    branch     => s_ctrl_branch,
+    jump       => s_ctrl_jump,
+    alu_op     => s_ctrl_alu_op,
+    mem_write  => s_ctrl_mem_write,
+    mem_to_reg => s_ctrl_mem_to_reg,
+    reg_write  => s_ctrl_reg_write
   );
   
   process (sw(11 downto 9), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
@@ -134,7 +167,7 @@ begin
   s_digits <= s_digits_upper & s_digits_lower;
 
   -- LED with signals from Main Control Unit
-  led <= s_ctrl_alu_op     & -- ALU operation        15:13
+  led <= s_ctrl_alu_op     & 
          b"0000_0"         & -- Unused               12:8
          s_ctrl_reg_dst    & -- Register destination 7
          s_ctrl_ext_op     & -- Extend operation     6
@@ -148,5 +181,4 @@ begin
   s_id_in_wd <= s_id_out_rd1 + s_id_out_rd2;
   s_id_in_reg_write <= s_mpg_out(0) and s_ctrl_reg_wr;
  
-
 end Behavioral;
