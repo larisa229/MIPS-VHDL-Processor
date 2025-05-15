@@ -144,6 +144,19 @@ component exec_unit
     zero        : out std_logic
   );
   end component;
+  
+component mem_unit is
+port (
+    -- inputs
+    clk         : in std_logic;
+    mem_write   : in std_logic;
+    alu_res     : in std_logic_vector(15  downto 0);
+    rd2         : in std_logic_vector(15 downto 0);        
+    -- outputs
+    mem_data      : out std_logic_vector(15 downto 0);
+    alu_res_out   : out std_logic_vector(15 downto 0)
+  );
+end component;
 
 begin
 
@@ -206,6 +219,8 @@ begin
     zero        => s_eu_out_zero
   );
   
+  inst_mu : mem_unit port map (clk => clk, mem_write => s_mu_in_mem_write, alu_res => s_eu_out_alu_res, rd2 => s_id_out_rd2, mem_data => s_mu_out_mem_data, alu_res_out => s_mu_out_alu_res);
+  
   process (sw(11 downto 9), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
   begin
     case sw(11 downto 9) is
@@ -247,5 +262,7 @@ begin
   
   s_id_in_wd <= s_id_out_rd1 + s_id_out_rd2;
   s_id_in_reg_write <= s_mpg_out(0) and s_ctrl_reg_write;
+  s_mu_in_mem_write <= s_ctrl_mem_write;
+  s_wb_out_wd <= s_mu_out_mem_data when s_ctrl_mem_to_reg = '1' else s_mu_out_alu_res;
  
 end Behavioral;
