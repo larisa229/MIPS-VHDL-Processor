@@ -60,6 +60,8 @@ signal s_mu_out_alu_res  : std_logic_vector(15 downto 0) := x"0000";
 -- write back unit
 signal s_wb_out_wd : std_logic_vector(15 downto 0) := x"0000";
 
+signal s_branch : std_logic := '0';
+
 component inst_fetch is
   port (
     -- inputs
@@ -148,10 +150,10 @@ component exec_unit
 component mem_unit is
 port (
     -- inputs
-    clk         : in std_logic;
-    mem_write   : in std_logic;
-    alu_res     : in std_logic_vector(15  downto 0);
-    rd2         : in std_logic_vector(15 downto 0);        
+    clk          : in std_logic;
+    mem_write    : in std_logic;
+    alu_res_in   : in std_logic_vector(15  downto 0);
+    rd2          : in std_logic_vector(15 downto 0);        
     -- outputs
     mem_data      : out std_logic_vector(15 downto 0);
     alu_res_out   : out std_logic_vector(15 downto 0)
@@ -165,10 +167,10 @@ begin
     inst_infe : inst_fetch
     port map (
     clk                    => clk,
-    branch_target_address  => x"0002",
-    jump_address           => x"0000",
+    branch_target_address  => s_eu_out_bta,
+    jump_address           => s_if_in_jump_address,
     jump                   => s_ctrl_jump,
-    pc_src                 => s_ctrl_branch,
+    pc_src                 => s_branch,
     pc_en                  => s_mpg_out(0),
     pc_reset               => s_mpg_out(1),
     instruction            => s_if_out_instruction,
@@ -219,7 +221,9 @@ begin
     zero        => s_eu_out_zero
   );
   
-  inst_mu : mem_unit port map (clk => clk, mem_write => s_mu_in_mem_write, alu_res => s_eu_out_alu_res, rd2 => s_id_out_rd2, mem_data => s_mu_out_mem_data, alu_res_out => s_mu_out_alu_res);
+  inst_mu : mem_unit 
+  port map (
+  clk => clk, mem_write => s_mu_in_mem_write, alu_res_in => s_eu_out_alu_res, rd2 => s_id_out_rd2, mem_data => s_mu_out_mem_data, alu_res_out => s_mu_out_alu_res);
   
   process (sw(11 downto 9), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
   begin
@@ -228,8 +232,10 @@ begin
       when "001"  => s_digits_upper <= s_if_out_pc_plus_one;
       when "010"  => s_digits_upper <= s_id_out_rd1;
       when "011"  => s_digits_upper <= s_id_out_rd2;
-      when "100"  => s_digits_upper <= s_id_in_wd;    
-      when others => s_digits_upper <= s_if_out_instruction;
+      when "100"  => s_digits_upper <= s_id_out_ext_imm;
+      when "101"  => s_digits_upper <= s_eu_out_alu_res;
+      when "110"  => s_digits_upper <= s_mu_out_mem_data;
+      when "111"  => s_digits_upper <= s_wb_out_wd;
     end case;
   end process;
 
@@ -237,16 +243,19 @@ begin
   process (sw(6 downto 4), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
   begin
     case sw(6 downto 4) is
-      when "000"  => s_digits_lower <= s_if_out_instruction;
+     when "000"  => s_digits_lower <= s_if_out_instruction;
       when "001"  => s_digits_lower <= s_if_out_pc_plus_one;
       when "010"  => s_digits_lower <= s_id_out_rd1;
       when "011"  => s_digits_lower <= s_id_out_rd2;
-      when "100"  => s_digits_lower <= s_id_in_wd;    
-      when others => s_digits_lower <= s_if_out_instruction;
+      when "100"  => s_digits_lower <= s_id_out_ext_imm;
+      when "101"  => s_digits_lower <= s_eu_out_alu_res;
+      when "110"  => s_digits_lower <= s_mu_out_mem_data;
+      when "111"  => s_digits_lower <= s_wb_out_wd;
     end case;
   end process;
 
   s_digits <= s_digits_upper & s_digits_lower;
+  s_branch <= s_ctrl_branch and s_eu_out_zero;
 
   -- LED with signals from Main Control Unit
   led <= s_ctrl_alu_op     & 
@@ -260,9 +269,10 @@ begin
          s_ctrl_mem_to_reg & -- Memory to register   1
          s_ctrl_reg_write;   -- Register write       0
   
-  s_id_in_wd <= s_id_out_rd1 + s_id_out_rd2;
   s_id_in_reg_write <= s_mpg_out(0) and s_ctrl_reg_write;
-  s_mu_in_mem_write <= s_ctrl_mem_write;
+  s_mu_in_mem_write <= s_ctrl_mem_write and s_mpg_out(0);
   s_wb_out_wd <= s_mu_out_mem_data when s_ctrl_mem_to_reg = '1' else s_mu_out_alu_res;
+  s_if_in_jump_address <= x"00" & s_if_out_instruction(7 downto 0);
+  s_id_in_wd <= s_wb_out_wd;
  
 end Behavioral;
