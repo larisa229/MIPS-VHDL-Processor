@@ -62,6 +62,45 @@ signal s_wb_out_wd : std_logic_vector(15 downto 0) := x"0000";
 
 signal s_branch : std_logic := '0';
 
+-- registers
+signal p_if_id : std_logic_vector(32 downto 0) := (others => '0');
+signal p_id_ex : std_logic_vector(82 downto 0) := (others => '0');
+-- 0-2 - rd: p_if_id(6 downto 4)
+-- 3-5 - rt: p_if_id(9 downto 7)
+-- 6-8 - func: p_if_id(2 downto 0)
+-- 9 - sa: p_if_id(3)
+-- 10-25 - ext_imm: s_id_out_ext_imm
+-- 26-41 - rd2: s_id_out_rd2
+-- 42-57 - rd2: s_id_out_rd1
+-- 58-73 - pc+1: p_if_id(31 downrto 16)
+-- 74 - regdst
+-- 75 - alusrc
+-- 76-78 - aluop
+-- 79 - branch
+-- 80 - memWrite
+-- 81 - regWrite
+-- 82 - memToReg
+
+signal p_mu_wb : std_logic_vector(35 downto 0) := (others => '0');
+-- 0-2 - mux_out: p_ex_mu(2 downto 0)
+-- 3-18 - aluRes: p_ex_mu(34 downto 19)
+-- 19-34 - memData: s_mu_out_mem_data
+-- 35 - regWrite: p_ex_mu(54)
+-- 36 - memToReg: p_ex_mu(55)
+
+signal p_ex_mu : std_logic_vector(55 downto 0) := (others => '0');
+-- 0-2 - rt or rd: s_mux_out_reg
+-- 3-18 - rd2: p_id_ex(57 downto 42)
+-- 19-34 - aluRes: s_eu_out_alu_res
+-- 35 - zero: s_eu_out_zero
+-- 36-51 - branch target address: s_eu_out_bta
+-- 52 - branch: p_id_ex(79)
+-- 53 - memWrite: p_id_ex(80)
+-- 54 - regWrite: p_id_ex(81)
+-- 55 - memToReg: p_id_ex(82)
+
+signal s_mux_out_reg : std_logic_vector(2 downto 0) := (others => '0');
+
 component inst_fetch is
   port (
     -- inputs
@@ -167,7 +206,7 @@ begin
     inst_infe : inst_fetch
     port map (
     clk                    => clk,
-    branch_target_address  => s_eu_out_bta,
+    branch_target_address  => p_ex_mu(51 downto 36),
     jump_address           => s_if_in_jump_address,
     jump                   => s_ctrl_jump,
     pc_src                 => s_branch,
@@ -180,11 +219,11 @@ begin
     inst_indcd : instr_decode
     port map (
     clk       => clk,
-    instr     => s_if_out_instruction,
+    instr     => p_if_id(15 downto 0),
     wd        => s_id_in_wd,
     ext_op    => s_ctrl_ext_op,
     reg_dst   => s_ctrl_reg_dst,
-    reg_write => s_id_in_reg_write,
+    reg_write => p_mu_wb(35),
     ext_imm   => s_id_out_ext_imm,
     func      => s_id_out_func,
     rd1       => s_id_out_rd1,
@@ -194,7 +233,7 @@ begin
   
    inst_cu : control_unit
    port map (
-    op_code    => s_if_out_instruction(15 downto 13),
+    op_code    => p_if_id(15 downto 13),
     reg_dst    => s_ctrl_reg_dst,
     ext_op     => s_ctrl_ext_op,
     alu_src    => s_ctrl_alu_src,
@@ -208,14 +247,14 @@ begin
   
   inst_eu : exec_unit
   port map (
-    ext_imm     => s_id_out_ext_imm,
-    func        => s_id_out_func,
-    rd1         => s_id_out_rd1,
-    rd2         => s_id_out_rd2,
-    pc_plus_one => s_if_out_pc_plus_one,
-    sa          => s_id_out_sa,
-    alu_op      => s_ctrl_alu_op,
-    alu_src     => s_ctrl_alu_src,
+    ext_imm     => p_id_ex(25 downto 10),
+    func        => p_id_ex(8 downto 6),
+    rd1         => p_id_ex(57 downto 42),
+    rd2         => p_id_ex(41 downto 26),
+    pc_plus_one => p_id_ex(73 downto 58),
+    sa          => p_id_ex(9),
+    alu_op      => p_id_ex(78 downto 76),
+    alu_src     => p_id_ex(75),
     alu_res     => s_eu_out_alu_res,
     bta         => s_eu_out_bta,
     zero        => s_eu_out_zero
@@ -223,13 +262,60 @@ begin
   
   inst_mu : mem_unit 
   port map (
-  clk => clk, mem_write => s_mu_in_mem_write, alu_res_in => s_eu_out_alu_res, rd2 => s_id_out_rd2, mem_data => s_mu_out_mem_data, alu_res_out => s_mu_out_alu_res);
+  clk => clk, 
+  mem_write => p_ex_mu(53), 
+  alu_res_in => p_ex_mu(34 downto 19), 
+  rd2 => p_ex_mu(18 downto 3), 
+  mem_data => s_mu_out_mem_data, 
+  alu_res_out => s_mu_out_alu_res);
+  
+  reg_if_id : process(clk)
+  begin
+    if rising_edge(clk) then
+        if s_mpg_out(0) = '1' then
+            p_if_id <= s_if_out_pc_plus_one & s_if_out_instruction;
+        end if;
+    end if;
+  end process;
+  
+  reg_id_ex : process(clk)
+  begin
+    if rising_edge(clk) then
+        if s_mpg_out(0) = '1' then
+            p_id_ex <= s_ctrl_mem_to_reg & s_ctrl_reg_write & s_ctrl_mem_write & s_ctrl_branch
+            & s_ctrl_alu_op & s_ctrl_alu_src & s_ctrl_reg_dst & p_if_id(31 downto 16) 
+            & s_id_out_rd1 & s_id_out_rd2 & s_id_out_ext_imm & p_if_id(3) & p_if_id(2 downto 0) & p_if_id(9 downto 7)
+            & p_if_id(6 downto 4);
+        end if;
+    end if;
+  end process;
+  
+  reg_ex_mu : process(clk)
+  begin
+    if rising_edge(clk) then
+        if s_mpg_out(0) = '1' then
+            p_ex_mu <= p_id_ex(82 downto 79) & s_eu_out_bta & s_eu_out_zero &
+                 s_eu_out_alu_res & p_id_ex(57 downto 42) & s_mux_out_reg;
+        end if;
+    end if;
+  end process;
+  
+  reg_mu_wb : process(clk)
+  begin
+    if rising_edge(clk) then
+        if s_mpg_out(0) = '1' then
+        p_mu_wb <= p_ex_mu(55) & p_ex_mu(54) &  
+                 s_mu_out_mem_data & p_ex_mu(34 downto 19) & p_ex_mu(2 downto 0);
+        end if;
+    end if;
+    end process;
+
   
   process (sw(11 downto 9), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
   begin
     case sw(11 downto 9) is
-      when "000"  => s_digits_upper <= s_if_out_instruction;
-      when "001"  => s_digits_upper <= s_if_out_pc_plus_one;
+      when "000"  => s_digits_upper <= p_if_id(15 downto 0);
+      when "001"  => s_digits_upper <= p_if_id(31 downto 16);
       when "010"  => s_digits_upper <= s_id_out_rd1;
       when "011"  => s_digits_upper <= s_id_out_rd2;
       when "100"  => s_digits_upper <= s_id_out_ext_imm;
@@ -243,8 +329,8 @@ begin
   process (sw(6 downto 4), s_if_out_pc_plus_one, s_if_out_instruction, s_id_out_rd1, s_id_out_rd2, s_id_in_wd)
   begin
     case sw(6 downto 4) is
-     when "000"  => s_digits_lower <= s_if_out_instruction;
-      when "001"  => s_digits_lower <= s_if_out_pc_plus_one;
+     when "000"  => s_digits_lower <= p_if_id(15 downto 0);
+      when "001"  => s_digits_lower <= p_if_id(31 downto 16);
       when "010"  => s_digits_lower <= s_id_out_rd1;
       when "011"  => s_digits_lower <= s_id_out_rd2;
       when "100"  => s_digits_lower <= s_id_out_ext_imm;
@@ -255,7 +341,7 @@ begin
   end process;
 
   s_digits <= s_digits_upper & s_digits_lower;
-  s_branch <= s_ctrl_branch and s_eu_out_zero;
+  s_branch <= p_ex_mu(52) and p_ex_mu(35);
 
   -- LED with signals from Main Control Unit
   led <= s_ctrl_alu_op     & 
@@ -271,8 +357,9 @@ begin
   
   s_id_in_reg_write <= s_mpg_out(0) and s_ctrl_reg_write;
   s_mu_in_mem_write <= s_ctrl_mem_write and s_mpg_out(0);
-  s_wb_out_wd <= s_mu_out_mem_data when s_ctrl_mem_to_reg = '1' else s_mu_out_alu_res;
-  s_if_in_jump_address <= x"00" & s_if_out_instruction(7 downto 0);
+  s_wb_out_wd <= p_mu_wb(34 downto 19) when p_mu_wb(36) = '1' else p_mu_wb(18 downto 3);
+  s_if_in_jump_address <= x"00" & p_if_id(7 downto 0);
   s_id_in_wd <= s_wb_out_wd;
+  s_mux_out_reg <= p_id_ex(2 downto 0) when p_id_ex(75) = '1' else p_id_ex(5 downto 3);
  
 end Behavioral;
